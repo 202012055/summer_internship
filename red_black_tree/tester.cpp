@@ -1,9 +1,11 @@
-#include"red_black_tree.h"
+#include"red_black_tree_analyser.h"
+#include<numeric>
 
 int main(){
 	rb_tree<int> tree;
-	tree.insert(23);
-	tree.insert(2);
-	tree.insert(33);
-	tree.insert(90);
+	rb_analyser<int> analyser(tree);
+	vector<int> list(20);
+	iota(begin(list),end(list),1);
+	random_shuffle(begin(list),end(list));
+	for_each(begin(list),end(list),[&](int x){tree.insert(x);analyser.print();cout<<endl;});
 }
