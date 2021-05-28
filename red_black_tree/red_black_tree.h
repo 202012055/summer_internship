@@ -57,7 +57,7 @@ void rb_tree<T>::insert(const T new_data){
 
 template<typename T>
 void rb_tree<T>::rotate_left(node* x){
-	cout<<"rotate_left\n";
+	//cout<<"rotate_left\n";
 	node*y=x->right;
 	x->right=y->left;
 	if(y->left != &sentinal)y->left->parent=x;
@@ -75,7 +75,7 @@ void rb_tree<T>::rotate_left(node* x){
 }
 template<typename T>
 void rb_tree<T>::rotate_right(node* x){
-	cout<<"rotate_right\n";
+	//cout<<"rotate_right\n";
 	node*y=x->left;
 	x->left=y->right;
 	if(y->right != &sentinal)y->right->parent=x;
@@ -93,13 +93,13 @@ void rb_tree<T>::rotate_right(node* x){
 }
 template<typename T>
 void rb_tree<T>::insert_fixup(node* n){
-	cout<<"insert_fixup\n";
+	//cout<<"insert_fixup\n";
 	while(n->parent->is_red){
-		cout<<"current: "<<(n->data)<<endl;
+		//cout<<"current: "<<(n->data)<<endl;
 		if(n->parent->parent->left==n->parent){ //parent is the left child
-			cout<<"left child\n";
+			//cout<<"left child\n";
 			if(n->parent->parent->right->is_red){
-				cout<<"ripple up\n";
+				//cout<<"ripple up\n";
 				n->parent->parent->right->is_red=false;
 				n->parent->is_red=false;
 				n->parent->parent->is_red=true;
@@ -114,9 +114,9 @@ void rb_tree<T>::insert_fixup(node* n){
 				rotate_right(n->parent->parent);
 			}
 		}else{
-			cout<<"right child\n";
+			//cout<<"right child\n";
 			if(n->parent->parent->left->is_red){
-				cout<<"ripple up\n";
+				//cout<<"ripple up\n";
 				n->parent->parent->left->is_red=false;
 				n->parent->is_red=false;
 				n->parent->parent->is_red=true;
