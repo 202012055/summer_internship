@@ -18,14 +18,63 @@ public:
 	node *root{};
 	friend class rb_analyser<T>;
 	void insert(const T new_data);
+	bool remove(const T &key);
 	bool find(const T& key)const;
+	void transplant(node*u,node*v);
 private:
 	void insert_fixup(node* n);
+	void remove_fixup(node* n);
 	void rotate_left(node* n);
 	void rotate_right(node* n);
 	node* find_node(const T& key)const;
 };
 
+template<typename T>
+bool rb_tree<T>::remove(const T & key){
+	node*x,*y,* z=find_node(key);
+	if(!z)return false;
+	y=z;
+	bool y_orignal_color=y->is_red;
+	if(z->left== &(sentinal)){
+		x=z->right;
+		transplant(z,z->right);
+	}else if(z->right== &(sentinal)){
+		x=z->left;
+		transplant(z,z->left);
+	}else{
+		y=z->right;
+		//finding minimum in y's subtree
+		while(y->left != &(sentinal))y=y->left;
+		y_orignal_color=y->is_red;
+		x=y->right;
+		if(y->parent==z){
+			x->parent=y;
+		}else{
+			transplant(y,y->right);
+			y->right=z->right;
+			y->right->parent=y;
+		}
+		transplant(z,y);
+		y->left=z->left;
+		y->left->parent=y;
+		y->is_red=z->is_red;
+	}
+	if(!y_orignal_color){
+		remove_fixup(x);
+	}
+	return true;
+}
+template<typename T>
+void rb_tree<T>::transplant(node*u,node*v){
+	if(u->parent==&sentinal){
+		root=v;
+	}else if(u==u->parent->left){
+		u->parent->left=v;
+	}else{
+		u->parent->right=v;
+	}
+	v->parent=u->parent;
+}
 template<typename T>
 bool  rb_tree<T>::find(const T & key)const{
 	return static_cast<bool>(find_node(key));
@@ -114,6 +163,62 @@ void rb_tree<T>::rotate_right(node* x){
 	y->right=x;
 	x->parent=y;
 
+}
+template<typename T>
+void rb_tree<T>::remove_fixup(node* x){
+	node* w;
+	while(x!=root && !x->is_red){
+		if(x==x->parent->left){
+			w=x->parent->right;		
+			if(w->is_red){
+				w->is_red=false;
+				x->parent->is_red=true;
+				rotate_left(x->parent);
+				w=x->parent->right;
+			}
+			if(!w->left->is_red && !w->right->is_red){
+				w->is_red=true;
+				x=x->parent;
+			}else{
+				if(!w->right->is_red){
+					w->left->is_red=false;
+					w->is_red=true;
+					rotate_right(w);
+					w=x->parent->right;
+				}
+				w->is_red=x->parent->is_red;
+				x->parent->is_red=false;
+				w->right->is_red=false;
+				rotate_left(x->parent);
+				x=root;
+			}
+		}else{
+			w=x->parent->left;		
+			if(w->is_red){
+				w->is_red=false;
+				x->parent->is_red=true;
+				rotate_right(x->parent);
+				w=x->parent->left;
+			}
+			if(!w->right->is_red && !w->left->is_red){
+				w->is_red=true;
+				x=x->parent;
+			}else{
+				if(!w->left->is_red){
+					w->right->is_red=false;
+					w->is_red=true;
+					rotate_left(w);
+					w=x->parent->left;
+				}
+				w->is_red=x->parent->is_red;
+				x->parent->is_red=false;
+				w->left->is_red=false;
+				rotate_right(x->parent);
+				x=root;
+			}
+		}
+	}
+	x->is_red=false;
 }
 template<typename T>
 void rb_tree<T>::insert_fixup(node* n){
