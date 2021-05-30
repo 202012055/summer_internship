@@ -18,12 +18,36 @@ public:
 	node *root{};
 	friend class rb_analyser<T>;
 	void insert(const T new_data);
+	bool find(const T& key)const;
 private:
 	void insert_fixup(node* n);
 	void rotate_left(node* n);
 	void rotate_right(node* n);
+	node* find_node(const T& key)const;
 };
 
+template<typename T>
+bool  rb_tree<T>::find(const T & key)const{
+	return static_cast<bool>(find_node(key));
+}
+template<typename T>
+typename rb_tree<T>::node* rb_tree<T>::find_node(const T & key)const{
+	if(root){
+		node *y,*x=root;
+		while(x!=&sentinal && x->data != key){
+			y=x;
+			if(x->data > key){
+				x=x->left;
+			}else{
+				x=x->right;
+			}
+		}
+		if(x==&sentinal)return nullptr;
+		return x;
+	}else{
+		return nullptr;
+	}
+}
 template<typename T>
 void rb_tree<T>::insert(const T new_data){
 	//cout<<"inserting: "<<new_data<<endl;
