@@ -1,0 +1,365 @@
+#!/bin/bash
+# NOTE:from here on 'file' can either mean file or a directory 
+#
+# this script provides functions which should be sourced
+#
+# WHAT IT DOES:
+# two functions are exposed makePublic and makePrivate 
+# they changes the directory hirearcy in such a way that only the public files can be accessed
+# all the other files can't even be listed
+# ofcourse the path to the public file (all the dirs in the path from the root ) will be visible
+# it has a concept of ROOT, only ROOT and files under it are considered(managed),default ROOT=`pwd`
+# it has a concept of SCOPE, where scope means for whom this enforcements will be placed , user,group or other,default SCOPE=o
+# it only changes rx of dirs and r of files of a given SCOPE, nothing else will be touched
+# it completly ignores the symlinks
+#
+# SOME RULES:
+# when using this system for first time all the nodes must be accessible from the ROOT
+# then make the ROOT private to make restricted files public
+# you cannot make a file private under a public ancestor
+# there will be no effect of declaring a file public whose ancestor is public
+#
+#### Function Explanation ####
+# makePublic()
+# -takes path(can be preceded by /) relative to ROOT as $1
+# -if under a non-public ancestor, then open the path to it and makes all its children accessible
+# -if under a public ancestor or already public, does nothing
+# -Returns code for operation on last SCOPE(it executes all the SCOPEs serially)
+# -0 made public
+# -1 already public
+#
+# makePrivate()
+# -takes path(can be preceded by /) relative to ROOT as $1
+# -if under a public ancestor, then rejects to do it
+# -or else makes itself and all its children private
+# -Returns  code for operation on last SCOPE(it executes all the SCOPEs serially)
+# -0 made private
+# -1 already private
+# -2 under public ancestor
+
+# Configurations: can be changed before invoking to deviate from the defaults
+#
+#ROOT is the directory from which the paths are cosidered relative too
+#defaults to the cwd of the program when the script is sourced
+ROOT="`pwd`"
+#
+# SCOPE is the variable that stores on what part of file permissions we act
+# can be [u][g][o]
+# must remember to give the process enough access to change permissions( like root access if needed)
+SCOPE=o
+
+setROOT(){
+	ROOT="$1"
+}
+
+
+#from here on is the real script
+shopt -s nullglob
+
+pdebug(){
+	[[ -z $pdebuging ]] || echo "$@"
+}
+
+sanitizeROOT(){
+	ROOT=${ROOT%/}/
+}
+validatePath(){
+	#isFile "$ROOT${1#/}" || isDir "$ROOT${1#/}" || { echo path is a symlink ; exit 1 ; }
+	return
+}
+
+isFile(){
+	[[ -f $1 && ! -L $1 ]]
+	return
+}
+isDir(){
+	[[ -d $1 && ! -L $1 ]]
+	return
+}
+
+#just checks if it is /
+hasParent(){
+	[[ ! ${1%/}/ = $ROOT ]]
+	return
+}
+
+# sets perms for $1 given in $2 on CURR_SCPOPE
+# $1 is the absolute filename 
+# it will filter 'w' for dirs and 'xw' for files from the $2
+# it only expects files and dirs no symlinks
+setPerm(){
+	local filter=w
+	local target="${1}"
+	if [[ -f $target ]];then
+		filter=wx
+	fi
+	local perms=`echo $2 | tr -d $filter`
+	pdebug setPerm $perms "$1"
+	chmod $CURR_SCPOPE+$perms "$target"
+}
+#same as above
+clearPerm(){
+	local filter=w
+	local target="${1}"
+	if [[ -f $target ]];then
+		filter=wx
+	fi
+	local perms=`echo $2 | tr -d $filter`
+	pdebug clearPerm $perms "$1"
+	chmod $CURR_SCPOPE-$perms "$target"
+}
+
+#returns 0 if readable in CURR_SCPOPE ,arg $1 is ROOT relative filename
+readable(){
+	local target="${1}"
+	local perms=`stat -c %a "$target"|rev`
+	case $CURR_SCPOPE in 
+		o)perms=0"${perms:0:1}";;
+		g)perms=0"${perms:1:1}";;
+		u)perms=0"${perms:2:1}";;
+	esac
+	#pdebug readable $perms "$target"
+	(( $perms & 4 ))
+	return 
+}
+#same as above
+executable(){
+	local target="${1}"
+	local perms=`stat -c %a "$target"|rev`
+	case $CURR_SCPOPE in 
+		o)perms=0"${perms:0:1}";;
+		g)perms=0"${perms:1:1}";;
+		u)perms=0"${perms:2:1}";;
+	esac
+	#pdebug executable $perms "$target"
+	(( $perms & 1 ))
+	return 
+}
+
+CURR_SCPOPE='' #stores the currently acted upon scope
+
+#public function, acts on all the scopes
+makePublic(){
+	sanitizeROOT
+	validatePath "$1"
+	for (( i=0; i<${#SCOPE}; i++ ));do
+		CURR_SCPOPE=${SCOPE:$i:1}
+		_makePublic "$@"
+	done
+}
+
+#public function, acts on all the scopes
+makePrivate(){
+	sanitizeROOT
+	validatePath "$1"
+	for (( i=0; i<${#SCOPE}; i++ ));do
+		CURR_SCPOPE=${SCOPE:$i:1}
+		_makePrivate "$@"
+	done
+}
+
+#it makes the way from root to target 
+#Returns
+# 0-under snake
+# 1-in snake
+# 2-over snake
+pullupper(){
+	local ret
+	local t="${1}" #target
+	pdebug pullupper "$t"
+	if ! executable "$t";then
+		setPerm "$t" x
+		for c in "$t"/* "$t"/.[^.]* ;do
+			( isFile "$c" || isDir "$c" ) && clearPerm "$c" rx
+		done
+		return 1
+	else
+		if hasParent "$t";then
+			local p="`dirname "$t"`" #parent
+			if readable "$t" && ! readable "$p" && executable "$p";then
+				return 0
+			else
+				pullupper "$p"
+				ret=$?
+				if [[ $ret == 1 ]];then
+					setPerm "$t" x
+					for c in "$t"/* "$t"/.[^.]* ;do
+						( isFile "$c" || isDir "$c" ) && clearPerm "$c" rx
+					done
+				fi
+				return $ret
+			fi
+		else
+			if ! readable "$t";then
+				return 2
+			else
+				return 0
+			fi
+		fi
+	fi
+}
+
+#pulls the lower limit up
+pulllower(){
+	local t="${1}" #target
+	pdebug pulllower "$t"
+	if isDir "$t";then
+		for c in "$t"/* "$t"/.[^.]* ;do
+			if isFile "$c" || ( isDir "$c" && ! ( readable "$c" && executable "$c" ) );then
+				pulllower "$c"
+			fi
+		done
+	fi
+	( isFile "$t" || isDir "$t" ) && setPerm "$t" rx
+}
+
+#does the real work , expects the CURR_SCPOPE to be correctly set
+_makePublic(){
+	local ret
+	local t="`realpath "$ROOT${1#/}"`" #target
+	t="${t%/}"
+	pdebug _makePublic CURR_SCOPE $CURR_SCPOPE PATH "$t"
+	if hasParent "$t";then
+		#pdebug hasParent
+		local p="`dirname "$t"`" #parent
+		if readable "$t" && ! readable "$p" && executable "$p";then
+			pdebug already public
+			return 1 
+		else
+			pullupper "$p"
+			ret=$?
+		fi
+	else
+		pdebug on root
+		if readable "$t";then 
+			ret=0
+		elif ! executable "$t";then
+			ret=1
+		else
+			ret=2
+		fi
+
+	fi
+	if [[ $ret = 0 ]];then
+		return 1
+	elif [[ $ret = 1 ]];then
+		setPerm "$t" rx
+	else
+		pulllower "$t"
+	fi
+	return 0
+
+}
+#checks if we relly need to do anything to make it private
+#returns
+# 0-already private
+# 1-ancestor public
+# 2-work needed
+isactionneeded(){
+	local t="${1}" #target
+	pdebug isactionneeded "$t"
+	if ! executable "$t";then
+		return 0
+	else
+		if hasParent "$t";then
+			local p="`dirname "$t"`" #parent
+			if readable "$t" && ! readable "$p" && executable "$p";then
+				return 1
+			else
+				isactionneeded "$p"
+				return $?
+			fi
+		else
+			if readable "$t";then
+				return 1
+			else
+				return 2
+			fi
+		fi
+	fi
+
+}
+
+#make the things below the firewall public so tree remains in its expected state
+dry(){
+	local t="${1}" #target
+	pdebug dry "$t"
+	if isFile "$t";then
+		setPerm "$t" r
+	else
+		if ! ( readable "$t" && executable "$t" );then
+			for c in "$t"/* "$t"/.[^.]* ;do
+				( isFile "$c" || isDir "$c" ) && dry "$c"
+			done
+			setPerm "$t" rx
+		fi
+	fi
+}
+
+#when a dir is made private removing access to all the unessencial parents
+minimizeaccess(){
+	local t="${1}" #target
+	pdebug minimizeaccess "$t"
+	for c in "$t"/* "$t"/.[^.]* ;do
+		if [[ -f $t ]];then
+			if readable "$c";then return;fi
+		else
+			if readable "$c" || executable "$c";then return ;fi
+		fi
+	done
+	for c in "$t"/* "$t"/.[^.]* ;do
+		setPerm "$c" rx
+	done
+	clearPerm "$t" rx
+	if hasParent "$t";then
+		local p="`dirname "$t"`" #parent
+		minimizeaccess "$p"
+	fi
+
+}
+#does the real work , expects the CURR_SCPOPE to be correctly set
+_makePrivate(){
+	local ret
+	local t="`realpath "$ROOT${1#/}"`" #target
+	t="${t%/}"
+	pdebug _makePrivate CURR_SCOPE $CURR_SCPOPE PATH "$t"
+	if hasParent "$t";then
+		local p="`dirname "$t"`" #parent
+		if readable "$t" && ! readable "$p" && executable "$p";then
+			ret=2
+		else
+			isactionneeded "$p"
+			ret=$?
+		fi
+	else
+		ret=2
+	fi
+	if [[ $ret = 2 ]];then
+		if readable "$t";then
+			clearPerm "$t" rx
+		fi
+		if isDir "$t" && ! readable "$t" && executable "$t";then
+			clearPerm "$t" rx
+			for c in "$t"/* "$t"/.[^.]* ;do
+				( isFile "$c" || isDir "$c" ) && dry "$c"
+			done
+		fi
+		if hasParent "$t";then
+			local p="`dirname "$t"`" #parent
+			minimizeaccess "$p"
+		fi
+		return 0
+	elif [[ $ret = 1 ]];then
+		return 2
+	else
+		return 1
+	fi
+}
+
+pdebug ROOT "$ROOT"
+pdebug SCOPE "$SCOPE"
+#if [[ $1 == public ]];then
+#makePublic "$2"
+#else
+#makePrivate "$2"
+#fi
